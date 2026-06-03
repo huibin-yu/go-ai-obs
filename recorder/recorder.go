@@ -4,9 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/yuhuibin/go-ai-obs/provider"
@@ -22,10 +24,11 @@ type Recorder struct {
 
 // Config holds configuration for the Recorder.
 type Config struct {
-	ServiceName  string
-	Environment  string
-	CustomAttrs  []attribute.KeyValue
-	SamplingRate float64
+	ServiceName     string
+	Environment     string
+	CustomAttrs     []attribute.KeyValue
+	SamplingRate    float64
+	MetricsRegistry prometheus.Registerer // nil means prometheus.DefaultRegisterer
 }
 
 // New creates a new Recorder. Callers should call Shutdown when done.
@@ -44,14 +47,44 @@ func New(cfg Config) (*Recorder, error) {
 
 	otel.SetTracerProvider(tp)
 
+	reg := cfg.MetricsRegistry
+	if reg == nil {
+		reg = prometheus.DefaultRegisterer
+	}
+
 	return &Recorder{
 		config: cfg,
 		tracer: tp.Tracer(
 			"go-ai-obs",
 			trace.WithInstrumentationVersion(Version),
 		),
-		metrics: NewMetrics(cfg.ServiceName),
+		metrics: NewMetricsWithRegistry(cfg.ServiceName, reg),
 	}, nil
+}
+
+// NewWithTracerProvider creates a Recorder with a pre-configured TracerProvider.
+// Use this for testing or when you need full control over the tracing setup.
+func NewWithTracerProvider(cfg Config, tp *sdktrace.TracerProvider) *Recorder {
+	if cfg.ServiceName == "" {
+		cfg.ServiceName = "unknown-service"
+	}
+	if cfg.SamplingRate <= 0 {
+		cfg.SamplingRate = 1.0
+	}
+
+	reg := cfg.MetricsRegistry
+	if reg == nil {
+		reg = prometheus.DefaultRegisterer
+	}
+
+	return &Recorder{
+		config: cfg,
+		tracer: tp.Tracer(
+			"go-ai-obs",
+			trace.WithInstrumentationVersion(Version),
+		),
+		metrics: NewMetricsWithRegistry(cfg.ServiceName, reg),
+	}
 }
 
 // Shutdown flushes pending spans and stops the trace exporter.

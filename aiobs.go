@@ -125,16 +125,79 @@ func (c *TracedOpenAIClient) CreateChatCompletion(ctx context.Context, req opena
 }
 
 // CreateChatCompletionStream calls the underlying OpenAI streaming client.
-// Streaming metrics record the total duration and accumulated token count.
-func (c *TracedOpenAIClient) CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (*openai.ChatCompletionStream, error) {
+// The returned stream wraps the original and automatically records observability
+// data when the stream is closed or EOF is reached.
+func (c *TracedOpenAIClient) CreateChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest) (*TracedChatCompletionStream, error) {
 	ctx, finish := c.recorder.inner.StartCall(ctx, c.provider, req)
 	stream, err := c.Client.CreateChatCompletionStream(ctx, req)
 	if err != nil {
 		finish(nil, err)
 		return nil, err
 	}
-	// For streaming, we can't know token counts until the stream is consumed.
-	// Record basic info now; advanced usage can use TraceStream helper.
-	finish(nil, nil)
-	return stream, nil
+	return &TracedChatCompletionStream{
+		ChatCompletionStream: stream,
+		finish:               finish,
+		provider:             c.provider,
+	}, nil
+}
+
+// TracedChatCompletionStream wraps an OpenAI chat completion stream to accumulate
+// token usage and record observability data upon completion.
+type TracedChatCompletionStream struct {
+	*openai.ChatCompletionStream
+	finish             func(resp any, err error)
+	provider           *provider.OpenAIProvider
+	accumulated        openai.ChatCompletionResponse
+	hasUsage           bool
+	firstMessageContent string
+}
+
+// Recv receives the next chunk from the stream. On EOF, it records the
+// accumulated usage as observability data.
+func (s *TracedChatCompletionStream) Recv() (openai.ChatCompletionStreamResponse, error) {
+	resp, err := s.ChatCompletionStream.Recv()
+
+	// Accumulate content and usage from chunks
+	if resp.Usage != nil {
+		s.accumulated.Usage = *resp.Usage
+		s.hasUsage = true
+	}
+	if s.firstMessageContent == "" && len(resp.Choices) > 0 {
+		s.firstMessageContent = resp.Choices[0].Delta.Content
+	}
+	if len(resp.Choices) > 0 && resp.Choices[0].FinishReason != "" {
+		s.accumulated.Choices = []openai.ChatCompletionChoice{
+			{FinishReason: resp.Choices[0].FinishReason},
+		}
+	}
+	s.accumulated.Model = resp.Model
+
+	// Record on EOF
+	if err != nil {
+		s.recordAndClose()
+	}
+
+	return resp, err
+}
+
+// Close closes the stream and records observability data.
+func (s *TracedChatCompletionStream) Close() error {
+	err := s.ChatCompletionStream.Close()
+	s.recordAndClose()
+	return err
+}
+
+func (s *TracedChatCompletionStream) recordAndClose() {
+	// Guard against double-close (finish must be called exactly once)
+	if s.finish == nil {
+		return
+	}
+	resp := s.accumulated
+	if s.hasUsage {
+		s.finish(resp, nil)
+	} else {
+		// Stream was consumed without usage info — record what we have
+		s.finish(nil, nil)
+	}
+	s.finish = nil
 }
