@@ -13,7 +13,7 @@
 ### Goals
 - Auto-instrument LLM calls with OpenTelemetry traces (Spans)
 - Export Prometheus metrics (latency, token usage, cost)
-- Support multiple LLM providers via adapter pattern (OpenAI first, Anthropic second)
+- Support multiple LLM providers via adapter pattern (OpenAI first, Gemini second)
 - Provide framework middleware (Gin first)
 - Minimize user-code intrusion (ideally 1-3 lines to enable)
 
@@ -40,7 +40,7 @@ go-ai-obs.Wrap(client, opts...)
   +-- Core Recorder (Span lifecycle)
        |
        +-- OpenAI Adapter
-       +-- Anthropic Adapter
+       +-- Gemini Adapter
        +-- Custom Adapter
 ```
 
@@ -128,7 +128,7 @@ go-ai-obs/
 ├── provider/
 │   ├── provider.go       // AIProvider interface
 │   ├── openai.go         // OpenAI adapter (go-openai v2)
-│   └── anthropic.go      // Anthropic adapter (anthropic-sdk-go)
+│   └── gemini.go         // Google AI adapter
 ├── middleware/
 │   ├── gin.go            // Gin middleware
 │   └── generic.go        // Generic http.Handler wrapper
@@ -151,7 +151,7 @@ Required:
 - `github.com/sashabaranov/go-openai` — OpenAI Go SDK (Phase 1)
 
 Optional (later phases):
-- `github.com/anthropics/anthropic-sdk-go` — Anthropic Go SDK (Phase 3)
+- Google AI SDK — Gemini adapter (Phase 3)
 - `github.com/gin-gonic/gin` — Gin middleware (Phase 3)
 
 ## Implementation Phases
@@ -170,7 +170,7 @@ Optional (later phases):
 - `_examples/basic/` — working demo with local Jaeger
 
 ### Phase 3: Multi-Provider & Middleware
-- `provider/anthropic.go` — Anthropic adapter
+- `provider/gemini.go` — Google AI adapter
 - `middleware/gin.go` — Gin middleware
 - `middleware/generic.go` — Generic HTTP wrapper
 

@@ -6,14 +6,14 @@
 
 **Go-native, provider-agnostic observability for AI/LLM applications.**
 
-`go-ai-obs` auto-instruments your LLM calls with OpenTelemetry traces (GenAI semantic conventions), Prometheus metrics, and structured logging — monitor latency, token usage, cost, and TTFT across OpenAI, Anthropic, and Google AI.
+`go-ai-obs` auto-instruments your LLM calls with OpenTelemetry traces (GenAI semantic conventions), Prometheus metrics, and structured logging — monitor latency, token usage, cost, and TTFT across OpenAI, Google AI, and other providers.
 
 ## ✨ Features
 
 - 🎯 **GenAI Semantic Conventions** — `gen_ai.*` attributes per OpenTelemetry spec, compatible with Langfuse, Arize Phoenix, Datadog, and any OTLP backend
 - 🤖 **Agent & Tool Tracing** — parent-child span hierarchy for multi-step agent workflows with automatic tool call instrumentation
 - ⚡ **Streaming TTFT** — time-to-first-token and tokens-per-second for streaming LLM calls
-- 🔌 **Multi-Provider** — OpenAI, Anthropic, and Google AI (Gemini) adapters; add your own via `AIProvider` interface
+- 🔌 **Multi-Provider** — OpenAI and Google AI (Gemini) adapters; add your own via `AIProvider` interface
 - 📊 **OpenTelemetry Traces** — OTLP gRPC export to Jaeger, Tempo, Grafana
 - 📈 **Prometheus Metrics** — requests, tokens, latency, cost, TTFT out of the box
 - 🧩 **Framework Middleware** — Gin and gRPC interceptors with trace propagation
@@ -140,15 +140,6 @@ client := rec.WrapOpenAI(openai.NewClient("sk-..."))
 // CreateChatCompletion and CreateChatCompletionStream auto-traced
 ```
 
-### Anthropic (built-in)
-
-```go
-resp, err := aiobs.TraceCall(ctx, rec, provider.NewAnthropic(), req,
-    func(ctx context.Context) (provider.AnthropicResponse, error) {
-        return anthropicResp, nil
-    })
-```
-
 ### Google AI / Gemini (built-in)
 
 ```go
@@ -205,7 +196,7 @@ aiobs.WrapOpenAI / TraceCall / StartAgent / StartTool
   │
   ├── Trace  (OTLP gRPC → Jaeger/Tempo/Datadog/Honeycomb)
   ├── Metrics (Prometheus endpoint)
-  └── Provider Adapter (OpenAI / Anthropic / Gemini / Custom)
+  └── Provider Adapter (OpenAI / Gemini / Custom)
 ```
 
 All spans use OpenTelemetry GenAI Semantic Conventions (`gen_ai.*` attributes), making them natively compatible with any OTLP-compatible backend.

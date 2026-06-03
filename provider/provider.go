@@ -1,5 +1,5 @@
 // Package provider defines the interface for LLM provider adapters.
-// Each provider (OpenAI, Anthropic, Google AI) implements AIProvider to
+// Each provider (OpenAI, Google AI, etc.) implements AIProvider to
 // extract call-specific information for observability.
 package provider
 
@@ -33,7 +33,7 @@ type Message struct {
 // AIProvider extracts provider-specific information from LLM requests and responses.
 // Implementations are stateless and safe for concurrent use.
 type AIProvider interface {
-	// Name returns the provider identifier (e.g., "openai", "anthropic", "gemini").
+	// Name returns the provider identifier (e.g., "openai", "gemini").
 	Name() string
 
 	// Operation returns the GenAI operation type for this call.
