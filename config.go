@@ -19,6 +19,10 @@ type Config struct {
 
 	// SamplingRate controls trace sampling (0.0 to 1.0). Default: 1.0.
 	SamplingRate float64
+
+	// CaptureContent enables gen_ai.input.messages and gen_ai.output.messages.
+	// Default: false (off for PII safety).
+	CaptureContent bool
 }
 
 // Option configures go-ai-obs.
@@ -52,11 +56,20 @@ func WithSamplingRate(rate float64) Option {
 	}
 }
 
+// WithCaptureContent enables capture of gen_ai.input.messages and gen_ai.output.messages.
+// Use with caution — messages may contain sensitive data.
+func WithCaptureContent() Option {
+	return func(c *Config) {
+		c.CaptureContent = true
+	}
+}
+
 func (c *Config) toRecorderConfig() recorder.Config {
 	return recorder.Config{
-		ServiceName:  c.ServiceName,
-		Environment:  c.Environment,
-		CustomAttrs:  c.CustomAttrs,
-		SamplingRate: c.SamplingRate,
+		ServiceName:    c.ServiceName,
+		Environment:    c.Environment,
+		CustomAttrs:    c.CustomAttrs,
+		SamplingRate:   c.SamplingRate,
+		CaptureContent: c.CaptureContent,
 	}
 }

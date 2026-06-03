@@ -27,7 +27,8 @@ type mockProvider struct {
 	extractRespCalls int
 }
 
-func (m *mockProvider) Name() string                                { return m.name }
+func (m *mockProvider) Name() string                              { return m.name }
+func (m *mockProvider) Operation() provider.Operation             { return provider.OpChat }
 func (m *mockProvider) ExtractRequest(req any) []attribute.KeyValue { m.extractReqCalls++; return m.reqAttrs }
 func (m *mockProvider) ExtractResponse(resp any, err error) provider.CallInfo {
 	m.extractRespCalls++
@@ -35,6 +36,9 @@ func (m *mockProvider) ExtractResponse(resp any, err error) provider.CallInfo {
 		return provider.CallInfo{Provider: m.name, FinishReason: "error"}
 	}
 	return m.respInfo
+}
+func (m *mockProvider) ExtractMessages(req, resp any) ([]provider.Message, []provider.Message) {
+	return nil, nil
 }
 func (m *mockProvider) Cost(model string, in, out int) float64 {
 	if m.costFunc != nil {

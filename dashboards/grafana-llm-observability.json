@@ -1,0 +1,175 @@
+{
+  "title": "go-ai-obs: LLM Observability",
+  "description": "Dashboard for go-ai-obs Prometheus metrics — LLM request volume, token usage, latency, cost, and time-to-first-token.",
+  "panels": [
+    {
+      "id": 1,
+      "title": "LLM Requests / sec",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(aiobs_llm_requests_total[$__rate_interval])",
+          "legendFormat": "{{model}} ({{provider}}) {{status}}"
+        }
+      ],
+      "description": "Per-second rate of LLM requests, partitioned by model, provider, and status (success/error). Spikes indicate traffic anomalies."
+    },
+    {
+      "id": 2,
+      "title": "LLM Error Rate",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(aiobs_llm_requests_total{status=\"error\"}[$__rate_interval])) / sum(rate(aiobs_llm_requests_total[$__rate_interval])) * 100",
+          "legendFormat": "Error Rate %"
+        }
+      ],
+      "description": "Percentage of LLM requests that fail. Alert if this exceeds 5%.",
+      "thresholds": [
+        { "value": 5, "color": "red" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Token Usage / sec",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(aiobs_llm_tokens_total{type=\"input\"}[$__rate_interval])",
+          "legendFormat": "{{model}} input"
+        },
+        {
+          "expr": "rate(aiobs_llm_tokens_total{type=\"output\"}[$__rate_interval])",
+          "legendFormat": "{{model}} output"
+        }
+      ],
+      "description": "Token consumption rate (tokens/second) broken down by input (prompt) and output (completion)."
+    },
+    {
+      "id": 4,
+      "title": "Token Usage (cumulative)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "aiobs_llm_tokens_total{type=\"input\"}",
+          "legendFormat": "{{model}} input"
+        },
+        {
+          "expr": "aiobs_llm_tokens_total{type=\"output\"}",
+          "legendFormat": "{{model}} output"
+        }
+      ],
+      "description": "Cumulative token consumption over time. Useful for cost forecasting."
+    },
+    {
+      "id": 5,
+      "title": "P50/P95/P99 Latency",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(aiobs_llm_latency_seconds_bucket[$__rate_interval]))",
+          "legendFormat": "P50 {{model}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(aiobs_llm_latency_seconds_bucket[$__rate_interval]))",
+          "legendFormat": "P95 {{model}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(aiobs_llm_latency_seconds_bucket[$__rate_interval]))",
+          "legendFormat": "P99 {{model}}"
+        }
+      ],
+      "description": "Latency percentiles for LLM calls. P99 spikes may indicate upstream provider issues or rate limiting."
+    },
+    {
+      "id": 6,
+      "title": "Cost / hour",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(aiobs_llm_cost_dollars_total[$__rate_interval]) * 3600",
+          "legendFormat": "{{model}} ({{provider}})"
+        }
+      ],
+      "description": "Estimated cost rate in dollars per hour. Extrapolated from per-call cost tracking with built-in model pricing."
+    },
+    {
+      "id": 7,
+      "title": "Cumulative Cost",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(aiobs_llm_cost_dollars_total)",
+          "legendFormat": "Total Cost"
+        }
+      ],
+      "description": "Total estimated cumulative cost across all models and providers."
+    },
+    {
+      "id": 8,
+      "title": "Time-to-First-Token (P50/P95)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(aiobs_llm_ttft_seconds_bucket[$__rate_interval]))",
+          "legendFormat": "P50 {{model}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(aiobs_llm_ttft_seconds_bucket[$__rate_interval]))",
+          "legendFormat": "P95 {{model}}"
+        }
+      ],
+      "description": "Time-to-first-token percentiles for streaming LLM calls. High TTFT impacts perceived responsiveness."
+    },
+    {
+      "id": 9,
+      "title": "Requests by Model (table)",
+      "type": "table",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(aiobs_llm_requests_total[$__rate_interval])) by (model, provider, status)",
+          "format": "table"
+        }
+      ],
+      "description": "Per-model request breakdown."
+    },
+    {
+      "id": 10,
+      "title": "Cost by Model (pie)",
+      "type": "piechart",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "increase(aiobs_llm_cost_dollars_total[$__range])",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "description": "Cost distribution across models over the selected time range."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "query": "label_values(aiobs_llm_requests_total, service)",
+        "label": "Service"
+      },
+      {
+        "name": "provider",
+        "type": "query",
+        "query": "label_values(aiobs_llm_requests_total, provider)",
+        "label": "Provider"
+      }
+    ]
+  }
+}

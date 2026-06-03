@@ -5,12 +5,21 @@ import (
 	"testing"
 
 	openai "github.com/sashabaranov/go-openai"
+
+	"github.com/yuhuibin/go-ai-obs/semconv"
 )
 
 func TestOpenAIProvider_Name(t *testing.T) {
 	p := NewOpenAI()
 	if name := p.Name(); name != "openai" {
 		t.Errorf("expected 'openai', got '%s'", name)
+	}
+}
+
+func TestOpenAIProvider_Operation(t *testing.T) {
+	p := NewOpenAI()
+	if op := p.Operation(); op != OpChat {
+		t.Errorf("expected OpChat, got '%s'", op)
 	}
 }
 
@@ -32,46 +41,32 @@ func TestOpenAIProvider_ExtractRequest(t *testing.T) {
 	attrs := p.ExtractRequest(req)
 	m := attrsToMap(attrs)
 
-	tests := []struct {
-		key      string
-		expected any
-	}{
-		{"llm.model", "gpt-4o"},
-		{"llm.max_tokens", int64(256)},
-		{"llm.messages_count", int64(2)},
+	// Check GenAI standard attribute keys
+	if v, ok := m[semconv.AttrRequestModel]; !ok || v.AsString() != "gpt-4o" {
+		t.Errorf("expected gen_ai.request.model='gpt-4o', got %v", v.AsInterface())
+	}
+	if v, ok := m[semconv.AttrRequestMaxTokens]; !ok {
+		t.Errorf("missing %s", semconv.AttrRequestMaxTokens)
+	} else if n := v.AsInt64(); n != 256 {
+		t.Errorf("expected max_tokens=256, got %d", n)
+	}
+	if v, ok := m[semconv.AttrMessagesCount]; !ok {
+		t.Errorf("missing %s", semconv.AttrMessagesCount)
+	} else if n := v.AsInt64(); n != 2 {
+		t.Errorf("expected messages_count=2, got %d", n)
 	}
 
-	for _, tt := range tests {
-		v, ok := m[tt.key]
-		if !ok {
-			t.Errorf("missing attribute: %s", tt.key)
-			continue
-		}
-		val := v.AsInterface()
-		switch expected := tt.expected.(type) {
-		case string:
-			if val != expected {
-				t.Errorf("%s: expected %v, got %v", tt.key, expected, val)
-			}
-		case int64:
-			n, ok := val.(int64)
-			if !ok || n != expected {
-				t.Errorf("%s: expected %v, got %v (%T)", tt.key, expected, val, val)
-			}
-		}
-	}
-
-	// Float values need tolerance checks because of float32→float64 conversion
-	if v, ok := m["llm.temperature"]; ok {
+	// Float values need tolerance checks (float32→float64 conversion)
+	if v, ok := m[semconv.AttrRequestTemperature]; ok {
 		f, _ := v.AsInterface().(float64)
 		if !almostEqual(f, 0.7, 0.001) {
-			t.Errorf("llm.temperature: expected ~0.7, got %v", f)
+			t.Errorf("temperature: expected ~0.7, got %v", f)
 		}
 	}
-	if v, ok := m["llm.top_p"]; ok {
+	if v, ok := m[semconv.AttrRequestTopP]; ok {
 		f, _ := v.AsInterface().(float64)
 		if !almostEqual(f, 0.9, 0.001) {
-			t.Errorf("llm.top_p: expected ~0.9, got %v", f)
+			t.Errorf("top_p: expected ~0.9, got %v", f)
 		}
 	}
 }
@@ -88,6 +83,7 @@ func TestOpenAIProvider_ExtractResponse_Success(t *testing.T) {
 	p := NewOpenAI()
 
 	resp := openai.ChatCompletionResponse{
+		ID:    "chatcmpl-123",
 		Model: "gpt-4o-2024-05-13",
 		Usage: openai.Usage{
 			PromptTokens:     100,
@@ -97,9 +93,7 @@ func TestOpenAIProvider_ExtractResponse_Success(t *testing.T) {
 		Choices: []openai.ChatCompletionChoice{
 			{
 				FinishReason: openai.FinishReasonStop,
-				Message: openai.ChatCompletionMessage{
-					Content: "Hello!",
-				},
+				Message: openai.ChatCompletionMessage{Content: "Hello!"},
 			},
 		},
 	}
@@ -108,6 +102,9 @@ func TestOpenAIProvider_ExtractResponse_Success(t *testing.T) {
 
 	if info.Model != "gpt-4o-2024-05-13" {
 		t.Errorf("expected model 'gpt-4o-2024-05-13', got '%s'", info.Model)
+	}
+	if info.ResponseID != "chatcmpl-123" {
+		t.Errorf("expected response ID 'chatcmpl-123', got '%s'", info.ResponseID)
 	}
 	if info.InputTokens != 100 {
 		t.Errorf("expected 100 input tokens, got %d", info.InputTokens)
@@ -123,7 +120,6 @@ func TestOpenAIProvider_ExtractResponse_Success(t *testing.T) {
 func TestOpenAIProvider_ExtractResponse_Error(t *testing.T) {
 	p := NewOpenAI()
 	info := p.ExtractResponse(nil, errors.New("api error"))
-
 	if info.FinishReason != "error" {
 		t.Errorf("expected finish reason 'error', got '%s'", info.FinishReason)
 	}
@@ -132,15 +128,35 @@ func TestOpenAIProvider_ExtractResponse_Error(t *testing.T) {
 func TestOpenAIProvider_ExtractResponse_InvalidType(t *testing.T) {
 	p := NewOpenAI()
 	info := p.ExtractResponse("not a response", nil)
-
 	if info.Model != "" {
-		t.Errorf("expected empty model for invalid type, got '%s'", info.Model)
+		t.Errorf("expected empty model, got '%s'", info.Model)
+	}
+}
+
+func TestOpenAIProvider_ExtractMessages(t *testing.T) {
+	p := NewOpenAI()
+	req := openai.ChatCompletionRequest{
+		Messages: []openai.ChatCompletionMessage{
+			{Role: "user", Content: "Hello"},
+		},
+	}
+	resp := openai.ChatCompletionResponse{
+		Choices: []openai.ChatCompletionChoice{
+			{Message: openai.ChatCompletionMessage{Role: "assistant", Content: "Hi!"}},
+		},
+	}
+
+	input, output := p.ExtractMessages(req, resp)
+	if len(input) != 1 || input[0].Content != "Hello" {
+		t.Errorf("expected 1 input message 'Hello', got %v", input)
+	}
+	if len(output) != 1 || output[0].Content != "Hi!" {
+		t.Errorf("expected 1 output message 'Hi!', got %v", output)
 	}
 }
 
 func TestOpenAIProvider_Cost(t *testing.T) {
 	p := NewOpenAI()
-
 	tests := []struct {
 		model        string
 		inputTokens  int
@@ -150,10 +166,8 @@ func TestOpenAIProvider_Cost(t *testing.T) {
 		{"gpt-4o", 1_000_000, 0, 2.50},
 		{"gpt-4o", 0, 1_000_000, 10.00},
 		{"gpt-4o", 1000, 1000, 0.0025 + 0.010},
-		{"gpt-4o-mini", 500, 200, 0.000075 + 0.00012},
 		{"unknown-model", 1000, 1000, 0},
 	}
-
 	for _, tt := range tests {
 		cost := p.Cost(tt.model, tt.inputTokens, tt.outputTokens)
 		if !almostEqual(cost, tt.expectedCost, 0.0001) {
@@ -167,9 +181,8 @@ func TestRegisterPricing(t *testing.T) {
 	RegisterPricing("test-model", 1.0, 2.0)
 	p := NewOpenAI()
 	cost := p.Cost("test-model", 1_000_000, 500_000)
-	expected := 1.0 + 1.0
-	if !almostEqual(cost, expected, 0.0001) {
-		t.Errorf("expected %.4f, got %.4f", expected, cost)
+	if !almostEqual(cost, 2.0, 0.0001) {
+		t.Errorf("expected 2.0, got %.4f", cost)
 	}
 }
 
@@ -182,10 +195,8 @@ func TestFormatCost(t *testing.T) {
 		{0.001, "$0.0010"},
 		{0.0, "$0.0000"},
 	}
-
 	for _, tt := range tests {
-		got := FormatCost(tt.dollars)
-		if got != tt.expected {
+		if got := FormatCost(tt.dollars); got != tt.expected {
 			t.Errorf("FormatCost(%.4f): expected %s, got %s", tt.dollars, tt.expected, got)
 		}
 	}

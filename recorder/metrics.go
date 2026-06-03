@@ -30,6 +30,7 @@ type Metrics struct {
 	tokensTotal      *prometheus.CounterVec
 	latencySeconds   *prometheus.HistogramVec
 	costDollarsTotal *prometheus.CounterVec
+	ttftSeconds      *prometheus.HistogramVec // Time-to-First-Token
 }
 
 // NewMetrics creates and registers Prometheus metrics on the default registry.
@@ -68,6 +69,13 @@ func NewMetricsWithRegistry(serviceName string, reg prometheus.Registerer) *Metr
 			Name:      "llm_cost_dollars_total",
 			Help:      "Total estimated cost of LLM calls in dollars.",
 		}, []string{"service", "model", "provider"}),
+
+		ttftSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "aiobs",
+			Name:      "llm_ttft_seconds",
+			Help:      "Time-to-first-token for streaming LLM calls in seconds.",
+			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+		}, []string{"service", "provider", "model"}),
 	}
 
 	reg.MustRegister(
@@ -75,6 +83,7 @@ func NewMetricsWithRegistry(serviceName string, reg prometheus.Registerer) *Metr
 		m.tokensTotal,
 		m.latencySeconds,
 		m.costDollarsTotal,
+		m.ttftSeconds,
 	)
 
 	return m
